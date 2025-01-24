@@ -1,0 +1,69 @@
+import { pool } from "../db";
+import type { IBetResult } from "../interfaces/userObj";
+
+export class BetResult {
+  static async findById(id: string | number): Promise<any> {
+    const query = `select * from bet_results where bet_result_id = ?`;
+    let [res]: any = await pool.query(query, [id]);
+    return res[0];
+  }
+  static async fetchByUserId(id: string | number): Promise<any> {
+    const query = `select * from bet_results where player_id = ?`;
+    let [res] = await pool.query(query, id);
+    return res;
+  }
+  static async create({
+    player_id,
+    token,
+    match_id,
+    room_id,
+    transaction_id,
+    game_settings_id,
+    round_no,
+    bet_amt,
+    won_amt,
+    status,
+    reels,
+    result,
+  }: IBetResult): Promise<number> {
+    const query = `
+      INSERT INTO bet_results 
+      (player_id, token, match_id, room_id, transaction_id, game_settings_id, status, round_no, bet_amt, won_amt, reels, result) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    `;
+
+    const serializedReels = JSON.stringify(reels); // Serialize JSON data
+    const serializedResult = JSON.stringify(result); // Serialize JSON data
+
+    const connection = await pool.getConnection();
+    try {
+      const [res]: any = await connection.query(query, [
+        player_id,
+        token,
+        match_id,
+        room_id,
+        transaction_id,
+        game_settings_id,
+        status,
+        round_no,
+        bet_amt,
+        won_amt,
+        serializedReels,
+        serializedResult,
+      ]);
+      return res.insertId;
+    } finally {
+      connection.release();
+    }
+  }
+  static async update(fields: any, id: number | string) {
+    const query = `update table bet_results set ? where bet_result_id = ?`;
+    let [res] = await pool.query(query, fields);
+    return res;
+  }
+  static async delete(id: number | string) {
+    const query = `delete from bet_results where bet_result_id = ?`;
+    let [res] = await pool.query(query, [id]);
+    return res;
+  }
+}
