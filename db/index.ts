@@ -1,6 +1,6 @@
 import { createPool } from "mysql2/promise";
 import { config } from "dotenv";
-import { betResult, dbQuery, gameSettings } from "./tables";
+import { betResult, dbQuery, gameSettings, transaction } from "./tables";
 
 config({ path: ".env" });
 
@@ -25,6 +25,8 @@ export const createTables = async () => {
     await pool.execute(dbQuery);
     await pool.execute(gameSettings);
     await pool.execute(betResult);
+    await pool.execute(transaction);
+
   } catch (error) {
     console.error("Error creating tables", error);
   }

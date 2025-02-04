@@ -26,6 +26,7 @@ export const checkAuth = async (socket: Socket, next: Function) => {
       urNm: newUser.user.name,
       bl: newUser.user.balance,
       crTs: Date.now(),
+      operatorId: newUser.user.operatorId
     };
     socket.data.info = info;
     socket.data.token = token;
@@ -56,7 +57,6 @@ export const getUserDetail = async ({
       throw new Error(`HTTP error! status: ${resp.status}`);
     }
     const respJson = (await resp.json()) as IUserDetailResponse;
-
     if (respJson.status === false) {
       throw new Error("Invalid token or user not found");
     }

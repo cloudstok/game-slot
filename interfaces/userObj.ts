@@ -4,6 +4,7 @@ export interface IUserDetailResponse {
     user_id: string;
     name: string;
     balance: number;
+    operatorId: string
   };
 }
 
@@ -12,6 +13,7 @@ export interface Info {
   urNm: string;
   bl: number;
   crTs: number;
+  operatorId: string
 }
 
 export interface IMatchData {
@@ -49,4 +51,16 @@ export interface IBetResult {
   status: string;
   reels: number[];
   result: IWinCombos[];
+  operator_id: string
+}
+
+export interface ITransaction {
+  player_id: string;
+  token: string;
+  amount: number;
+  match_id: string;
+  txn_id: string;
+  type: string;
+  operator_id: string;
+  txn_ref_id?: string; // Optional field
 }

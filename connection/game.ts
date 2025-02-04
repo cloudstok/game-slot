@@ -38,19 +38,26 @@ export class SlotMachine {
       sid: socket.id,
       rmid: crypto.randomUUID(),
       bl: parseFloat(socket.data?.info?.bl),
-      mthId: crypto.randomUUID(),
     } as IMatchData;
     socket.data.matches = 0;
 
     socket.join(socket.data?.info?.rmid);
     socket.emit("200", socket.data.info);
+    socket.emit("info", { bl: socket.data.info.bl });
 
     socket.on("spin", this.onSpinReels.bind(this, socket));
   }
 
   async onSpinReels(socket: Socket, data: any) {
     console.log("-----------------spin start--------------");
+
+    if (!GS.GAME_SETTINGS) {
+      socket.emit("400", "unable to load game settings");
+      return;
+    }
+
     this.reels = SlotUtility.generateReels(15, 7);
+    socket.data.info.mthId = crypto.randomUUID();
 
     if (!data.betAmt) {
       socket.emit("400", "bet amount not sent");
@@ -58,7 +65,6 @@ export class SlotMachine {
     }
     data.betAmt = parseFloat(data.betAmt);
     console.log("GAME SETTINGS:", JSON.stringify(GS.GAME_SETTINGS));
-    console.log("data------", data);
 
     if (
       data.betAmt > GS.GAME_SETTINGS?.max_bet ||
@@ -88,8 +94,7 @@ export class SlotMachine {
       token: socket.data?.token,
       userId: playerState.urId,
       amount: playerState.betAmt,
-      roomId: parseInt(playerState.rmId),
-      operatorId: process.env.OPERATOR_ID,
+      operatorId: socket.data.info.operatorId,
       txnId: debitTxnId,
       type: "DEBIT",
     });
@@ -98,6 +103,8 @@ export class SlotMachine {
       socket.emit("400", "unable to process transaction");
       return;
     }
+
+    socket.emit("info", { bl: playerState.bl });
 
     // must create a transaction insertion db call
 
@@ -113,7 +120,7 @@ export class SlotMachine {
     });
 
     GS.winningCombinations4Match.forEach((idxArr: number[]) => {
-      if (!idxArr.some((i) => matchedIndices.has(i))) {
+      if (!idxArr.every((i) => matchedIndices.has(i))) {
         const data = SlotUtility.checkForFour(this.reels, idxArr);
         if (data?.cmbNm?.length) {
           data.cmbPyt = SlotUtility.calculatePayout(data, playerState.betAmt);
@@ -124,7 +131,7 @@ export class SlotMachine {
     });
 
     GS.winningCombinations3Match.forEach((idxArr: number[]) => {
-      if (!idxArr.some((i) => matchedIndices.has(i))) {
+      if (!idxArr.every((i) => matchedIndices.has(i))) {
         const data = SlotUtility.checkForThree(this.reels, idxArr);
         if (data?.cmbNm?.length) {
           data.cmbPyt = SlotUtility.calculatePayout(data, playerState.betAmt);
@@ -141,6 +148,10 @@ export class SlotMachine {
         (acc, winCombo) => acc + winCombo.cmbPyt,
         0
       );
+
+      if (playerState.payout > GS.GAME_SETTINGS.max_payout)
+        playerState.payout = GS.GAME_SETTINGS.max_payout;
+
       playerState.bl = playerState.bl + playerState.payout;
     }
 
@@ -161,8 +172,9 @@ export class SlotMachine {
       status: playerState?.win ? "WIN" : "LOSS",
       reels: playerState.reels,
       result: playerState.winCombos,
+      operator_id: socket.data.info.operatorId,
     };
-    console.log(betResultObj);
+    console.log("betResultObj", betResultObj);
     let id = await BetResult.create(betResultObj);
     if (id)
       await writeInLogs(
@@ -175,8 +187,8 @@ export class SlotMachine {
       userId: playerState.urId,
       token: socket.data?.token,
       amount: 0,
-      roomId: parseInt(playerState.rmId),
-      operatorId: process.env.OPERATOR_ID || "20",
+      roomId: playerState.rmId,
+      operatorId: socket.data.info.operatorId,
       txnId: txnId,
       type: "",
       txnRefId: "",
@@ -196,5 +208,8 @@ export class SlotMachine {
     // save playerState before transforming the reels to 2d array
     playerState.reels = SlotUtility.transformReels(playerState.reels);
     socket.emit("200", playerState);
+    setTimeout(() => {
+      socket.emit("info", { bl: playerState.bl });
+    }, 4000);
   }
 }

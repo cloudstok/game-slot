@@ -27,16 +27,17 @@ slotMachineIo.use((socket: Socket, next: NextFunction) =>
 new SlotMachine(slotMachineIo);
 
 app.get("/", (req: any, res: any) => {
-  return res.status(200).send({ statusCode: 200, message: "slot-machine" });
+  return res.status(200).send({ statusCode: 200, message: "Fruit-Burst Backend is up and running" });
 });
 
 app.get("/bet-history", async (req: any, res: any) => {
   try {
-    let { token } = req.query;
+    let { token, limit } = req.query;
     if (!token) throw new Error("token not sent");
+    if(!limit) limit=50
     let userDetails = await getUserDetail({ token, socketId: null });
     if (!userDetails.user.user_id) throw new Error("user not found");
-    let history = await BetResult.fetchByUserId(userDetails.user.user_id);
+    let history = await BetResult.fetchByUserId(userDetails.user.user_id, userDetails.user.operatorId, Number(limit));
     return res.status(200).send({
       statusCode: 200,
       history,

@@ -1,11 +1,12 @@
 import fs from "fs/promises";
+import { Transaction } from "../module/transaction";
+import type { ITransaction } from "../interfaces/userObj";
 
 export const processTransaction = async ({
   matchId,
   userId,
   token,
   amount,
-  roomId,
   operatorId,
   txnId,
   type,
@@ -16,10 +17,9 @@ export const processTransaction = async ({
   userId: string;
   token: string;
   amount: number;
-  roomId?: number;
   txnId: string;
   type: string;
-  operatorId?: string;
+  operatorId: string;
   txnRefId?: string;
   bet_result_id?: number | string;
 }): Promise<boolean> => {
@@ -32,19 +32,18 @@ export const processTransaction = async ({
     trType = 0;
   }
   console.log(trType, "txn_typ", type);
-  const creditMsg = `${amount.toFixed(2)} credited for ${
-    process.env.GAME_NAME
-  } game for MatchID ${matchId}`;
-  const debitMsg = `${amount.toFixed(2)} debited for ${
-    process.env.GAME_NAME
-  } game for MatchID ${matchId}`;
+  const creditMsg = `${amount.toFixed(2)} credited for ${process.env.GAME_NAME
+    } game for MatchID ${matchId}`;
+  const debitMsg = `${amount.toFixed(2)} debited for ${process.env.GAME_NAME
+    } game for MatchID ${matchId}`;
 
+  let game_id = process.env.GAME_ID
   let data = {
     amount,
     txn_id: txnId,
     user_id: userId,
     description: type === "CREDIT" ? creditMsg : debitMsg,
-    game_id: parseInt(process.env.GAME_ID || "19"),
+    game_id: Number(game_id),
     txn_type: trType, // 0->debit txn_ref_id
   } as { [key: string]: string | number };
 
@@ -69,6 +68,17 @@ export const processTransaction = async ({
       response: { ...respJson, createdAt: new Date() },
     };
 
+    let transactionObj: ITransaction = {
+      player_id: userId,
+      token: token,
+      amount: amount,
+      match_id: matchId ? matchId : "",
+      txn_id: txnId,
+      type: type,
+      operator_id: operatorId,
+      txn_ref_id: txnRefId,
+    };
+
     if (respJson.status) {
       if (type === "CREDIT")
         await writeInLogs("logs/creditSuccess.jsonl", JSON.stringify(obj));
@@ -78,10 +88,13 @@ export const processTransaction = async ({
         await writeInLogs("logs/creditFail.jsonl", JSON.stringify(obj));
       else await writeInLogs("logs/debitFail.jsonl", JSON.stringify(obj));
     }
-
+    await Transaction.create(transactionObj);
     return true;
   } catch (error) {
     console.error("error occured :", error);
+    if (type === "CREDIT")
+      await writeInLogs("logs/creditTransactionError.jsonl", JSON.stringify({ ...data, createdAt: new Date() }));
+    else await writeInLogs("logs/debitTransactionError.jsonl", JSON.stringify({ ...data, createdAt: new Date() }));
     return false;
   }
 };
