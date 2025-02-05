@@ -140,6 +140,28 @@ export class SlotMachine {
       }
     });
 
+    const specificCombo = [7, 3, 9];
+    let specificComboCount = 0;
+    playerState.winCombos.forEach((comb) =>
+      comb.cmbIdx.includes(7) &&
+      comb.cmbIdx.includes(3) &&
+      comb.cmbIdx.includes(9)
+        ? specificComboCount++
+        : specificComboCount
+    );
+    console.log("------------------", specificComboCount);
+
+    if (
+      !specificCombo.every((i) => matchedIndices.has(i)) &&
+      !specificComboCount
+    ) {
+      const data = SlotUtility.checkForThree(this.reels, specificCombo);
+      if (data?.cmbNm?.length) {
+        data.cmbPyt = SlotUtility.calculatePayout(data, playerState.betAmt);
+        playerState["winCombos"].push(data);
+      }
+    }
+
     playerState.win = playerState.winCombos.length > 0;
 
     if (playerState.win) {
