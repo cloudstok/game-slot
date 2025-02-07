@@ -96,7 +96,8 @@ export class SlotMachine {
       amount: playerState.betAmt,
       operatorId: socket.data.info.operatorId,
       txnId: debitTxnId,
-      type: "DEBIT",
+      type: "DEBIT",      
+      game_id: socket.data.game_id,
     });
 
     if (!y) {
@@ -214,6 +215,7 @@ export class SlotMachine {
       txnId: txnId,
       type: "",
       txnRefId: "",
+      game_id: socket.data.game_id,
       bet_result_id: id,
     };
 

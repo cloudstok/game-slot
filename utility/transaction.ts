@@ -11,6 +11,7 @@ export const processTransaction = async ({
   txnId,
   type,
   txnRefId,
+  game_id,
   bet_result_id,
 }: {
   matchId: string | null;
@@ -21,6 +22,7 @@ export const processTransaction = async ({
   type: string;
   operatorId: string;
   txnRefId?: string;
+  game_id: string;
   bet_result_id?: number | string;
 }): Promise<boolean> => {
   const url = String(process.env.TRANSACTION_URL);
@@ -37,7 +39,6 @@ export const processTransaction = async ({
   const debitMsg = `${amount.toFixed(2)} debited for ${process.env.GAME_NAME
     } game for MatchID ${matchId}`;
 
-  let game_id = process.env.GAME_ID
   let data = {
     amount,
     txn_id: txnId,

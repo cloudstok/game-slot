@@ -9,7 +9,9 @@ dotenv.config({
 export const checkAuth = async (socket: Socket, next: Function) => {
   try {
     const token: string = socket.handshake.query?.token as string;
+    const game_id: string = socket.handshake.query?.game_id as string;
     console.log("token", token);
+    console.log("game_id", game_id);
     if (!token) {
       return next(new Error("Authentication error: Invalid token"));
     }
@@ -26,11 +28,11 @@ export const checkAuth = async (socket: Socket, next: Function) => {
       urNm: newUser.user.name,
       bl: newUser.user.balance,
       crTs: Date.now(),
-      operatorId: newUser.user.operatorId
+      operatorId: newUser.user.operatorId,
     };
     socket.data.info = info;
     socket.data.token = token;
-    console.log(info);
+    socket.data.game_id = game_id;
     next();
   } catch (error: any) {
     console.error("Authentication error:", error.message);
@@ -57,6 +59,7 @@ export const getUserDetail = async ({
       throw new Error(`HTTP error! status: ${resp.status}`);
     }
     const respJson = (await resp.json()) as IUserDetailResponse;
+
     if (respJson.status === false) {
       throw new Error("Invalid token or user not found");
     }
