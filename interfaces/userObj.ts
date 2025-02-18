@@ -54,13 +54,31 @@ export interface IBetResult {
   operator_id: string
 }
 
-export interface ITransaction {
-  player_id: string;
+
+export interface IBetObject {
+  id: string;
+  bet_amount: number;
+  winning_amount?: number;
+  game_id: string;
+  user_id: string;
+  txn_id?: string;
+  ip?: string;
+}
+
+export interface IPlayerDetails {
+  game_id: string;
+  operatorId: string;
   token: string;
-  amount: number;
-  match_id: string;
+}
+
+export interface IWebhookData {
   txn_id: string;
-  type: string;
-  operator_id: string;
-  txn_ref_id?: string; // Optional field
+  ip?: string;
+  game_id: string;
+  user_id: string;
+  amount?: number;
+  description?: string;
+  bet_id?: string;
+  txn_type?: number;
+  txn_ref_id?: string;
 }

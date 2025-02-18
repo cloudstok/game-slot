@@ -1,11 +1,11 @@
 import type { Namespace, Socket } from "socket.io";
 import crypto, { randomUUID } from "crypto";
-import type { IMatchData } from "../interfaces/userObj";
+import type { IBetObject, IMatchData, IPlayerDetails } from "../interfaces/userObj";
 import { SlotUtility } from "./utility";
 import { BetResult } from "../module/betResult";
 import { config } from "dotenv";
 import { GS } from "./gsConstants";
-import { processTransaction, writeInLogs } from "../utility/transaction";
+import { updateBalanceFromAccount, generateUUIDv7 } from "../utility/v2Transactions";
 
 config({ path: ".env" });
 
@@ -28,7 +28,7 @@ export class SlotMachine {
 
   async onConnect(socket: Socket) {
     console.log(socket.id, " connected ", socket.data);
-    console.log(GS.GAME_SETTINGS);
+    // console.log(GS.GAME_SETTINGS);
 
     if (socket.data?.info?.bl < GS.GAME_SETTINGS?.join_amt)
       socket.emit("400", "balance low, cannot play the match");
@@ -64,7 +64,6 @@ export class SlotMachine {
       return;
     }
     data.betAmt = parseFloat(data.betAmt);
-    console.log("GAME SETTINGS:", JSON.stringify(GS.GAME_SETTINGS));
 
     if (
       data.betAmt > GS.GAME_SETTINGS?.max_bet ||
@@ -87,20 +86,25 @@ export class SlotMachine {
       winCombos: [],
     };
 
-    let debitTxnId = randomUUID();
-
-    let y = await processTransaction({
-      matchId: socket.data?.info?.mthId,
-      token: socket.data?.token,
-      userId: playerState.urId,
-      amount: playerState.betAmt,
-      operatorId: socket.data.info.operatorId,
-      txnId: debitTxnId,
-      type: "DEBIT",      
+    const dbtTxnObj: IBetObject = {
+      id: playerState.mthId, // Unique bet or round ID
+      bet_amount: data.betAmt,
       game_id: socket.data.game_id,
-    });
+      user_id: playerState.urId,
+      ip: socket.data.ip,
+    };
 
-    if (!y) {
+    console.log("------------------debit obj----------", dbtTxnObj);
+
+    const playerDetailsForTxn: IPlayerDetails = {
+      game_id: socket.data.game_id,
+      operatorId: socket.data.info.operatorId,
+      token: socket.data.token,
+    };
+
+    let dbtTxnRes = await updateBalanceFromAccount(dbtTxnObj,"DEBIT",playerDetailsForTxn);
+console.log("-------------",dbtTxnRes);
+    if (!dbtTxnRes) {
       socket.emit("400", "unable to process transaction");
       return;
     }
@@ -150,7 +154,6 @@ export class SlotMachine {
         ? specificComboCount++
         : specificComboCount
     );
-    console.log("------------------", specificComboCount);
 
     if (
       !specificCombo.every((i) => matchedIndices.has(i)) &&
@@ -197,37 +200,36 @@ export class SlotMachine {
       result: playerState.winCombos,
       operator_id: socket.data.info.operatorId,
     };
-    console.log("betResultObj", betResultObj);
     let id = await BetResult.create(betResultObj);
-    if (id)
-      await writeInLogs(
-        "logs/bet_result_logs.jsonl",
-        JSON.stringify(betResultObj)
-      );
+    
 
-    let transactionObj = {
-      matchId: playerState.mthId,
-      userId: playerState.urId,
-      token: socket.data?.token,
-      amount: 0,
-      roomId: playerState.rmId,
-      operatorId: socket.data.info.operatorId,
-      txnId: txnId,
-      type: "",
-      txnRefId: "",
+    let cdtObj: IBetObject = {
+      id: playerState.mthId,
+      user_id: playerState.urId,
       game_id: socket.data.game_id,
-      bet_result_id: id,
+      bet_amount: playerState.betAmt,
+      winning_amount: playerState.payout,
+      // @ts-ignore
+      txn_id: dbtTxnRes.txn_id,
+      ip:
+        // @ts-ignore
+        socket.handshake.headers?.["x-forwarded-for"]?.split(",")[0].trim() ||
+        socket.handshake.address,
     };
 
     if (playerState.win) {
-      transactionObj.amount = playerState.payout;
-      transactionObj.type = "CREDIT";
-      transactionObj.txnRefId = debitTxnId;
-      let x = await processTransaction(transactionObj);
-      console.log("x", x);
-    }
+      let cdtTxn: any = await updateBalanceFromAccount(cdtObj, "CREDIT", {
+        game_id: socket.data.game_id,
+        operatorId: socket.data.info.operatorId,
+        token: socket.data.token,
+      });
 
-    console.log("socket.data", socket.data);
+      if (!cdtTxn)
+        return socket.emit("error", {
+          message: "unble to perform credit transaction, cashout unsuccessful",
+          playerState,
+        });
+    }
 
     // save playerState before transforming the reels to 2d array
     playerState.reels = SlotUtility.transformReels(playerState.reels);

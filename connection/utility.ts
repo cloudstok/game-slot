@@ -60,39 +60,30 @@ export abstract class SlotUtility {
 
   // @ts-ignore
   static calculatePayout(winCombo: IWinCombos, betAmt: number): number | any {
-    console.log("claculate payout");
-    console.log(winCombo, betAmt);
+
 
     const payout: number = GS.payouts[GS.payNames[winCombo.cmbVal[0]]];
 
     switch (winCombo.cmbIdx.length) {
       case 3:
-        console.log("A", payout.THREE);
         winCombo.cmbPyt = betAmt * payout.THREE;
         winCombo.cmbMtp = payout.THREE;
         winCombo.payline = SlotUtility.getPayLineIndex(winCombo);
-        console.log("pam", winCombo.cmbPyt);
         break;
       case 4:
-        console.log("B", payout.FOUR);
         winCombo.cmbPyt = betAmt * payout.FOUR;
         winCombo.cmbMtp = payout.FOUR;
         winCombo.payline = SlotUtility.getPayLineIndex(winCombo);
-        console.log("pam", winCombo.cmbPyt);
         break;
       case 5:
-        console.log("C", payout.FIVE);
         winCombo.cmbPyt = betAmt * payout.FIVE;
         winCombo.cmbMtp = payout.FIVE;
         winCombo.payline = SlotUtility.getPayLineIndex(winCombo);
-        console.log("pam", winCombo.cmbPyt);
         break;
 
       default:
         break;
     }
-
-    console.log("payout amount", winCombo.cmbPyt);
 
     return winCombo.cmbPyt;
   }
@@ -105,8 +96,6 @@ export abstract class SlotUtility {
       winCombo.cmbIdx.forEach((idx) => {
         if (payLine.includes(idx)) count++;
       });
-
-      console.log(winCombo.cmbIdx.length, count);
 
       switch (winCombo.cmbIdx.length) {
         case 5:
