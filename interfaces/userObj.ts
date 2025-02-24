@@ -82,3 +82,14 @@ export interface IWebhookData {
   txn_type?: number;
   txn_ref_id?: string;
 }
+
+export interface ITransaction {
+  player_id: string;
+  token: string;
+  amount: number;
+  match_id: string;
+  txn_id: string;
+  type: string;
+  operator_id: string;
+  txn_ref_id?: string; // Optional field
+}
