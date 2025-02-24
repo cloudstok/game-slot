@@ -7,12 +7,12 @@ export class BetResult {
     let [res]: any = await pool.query(query, [id]);
     return res[0];
   }
-  static async fetchByUserId(id: string | number, operator_id: string,limit:number=50): Promise<any> {
-    const query = `SELECT * FROM bet_results 
-        WHERE player_id = ? AND operator_id = ? 
-        ORDER BY created_at DESC 
-        LIMIT ?;`;
-    let [res] = await pool.query(query, [id, operator_id,limit]);
+  static async fetchByUserId(
+    id: string | number,
+    operator_id: string
+  ): Promise<any> {
+    const query = `select * from bet_results where player_id = ? and operator_id = ?`;
+    let [res] = await pool.query(query, [id, operator_id]);
     return res;
   }
   static async create({
@@ -28,7 +28,7 @@ export class BetResult {
     status,
     reels,
     result,
-    operator_id
+    operator_id,
   }: IBetResult): Promise<number> {
     const query = `
       INSERT INTO bet_results 
@@ -54,7 +54,7 @@ export class BetResult {
         won_amt,
         serializedReels,
         serializedResult,
-        operator_id
+        operator_id,
       ]);
       return res.insertId;
     } finally {

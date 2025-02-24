@@ -1,49 +1,52 @@
 import type { Namespace, Socket } from "socket.io";
 import crypto, { randomUUID } from "crypto";
-import type { IBetObject, IMatchData, IPlayerDetails } from "../interfaces/userObj";
-import { SlotUtility } from "./utility";
+import type { IBetObject, IMatchData, IPlayerDetails, IWinCombos } from "../interfaces/userObj";
 import { BetResult } from "../module/betResult";
 import { config } from "dotenv";
-import { GS } from "./gsConstants";
-import { updateBalanceFromAccount, generateUUIDv7 } from "../utility/v2Transactions";
+import { GAME_SETTINGS } from "./gsConstants";
+import { updateBalanceFromAccount } from "../utility/v2Transactions";
+import { redisClient } from "../cache/redis"; // Import Redis client
 
 config({ path: ".env" });
+
+const GAME_NAME = process.env.GAME_NAME || "SPINX"; // Define game name from env
 
 export class SlotMachine {
   io: Namespace;
   reels: number[];
-  //   once assigned load this config on redis and access all the properties from there
   config: any;
+  redisKey: any;
 
   constructor(serverSocket: Namespace) {
     this.io = serverSocket;
     this.reels = new Array(15);
-
-    while (!this.config) {
-      this.config = new GS();
-    }
-
+    this.config = GAME_SETTINGS;
     this.io.on("connection", this.onConnect.bind(this));
   }
 
   async onConnect(socket: Socket) {
     console.log(socket.id, " connected ", socket.data);
-    // console.log(GS.GAME_SETTINGS);
 
-    if (socket.data?.info?.bl < GS.GAME_SETTINGS?.join_amt)
+    if (socket.data?.info?.bl < GAME_SETTINGS?.join_amt) {
       socket.emit("400", "balance low, cannot play the match");
+      return;
+    }
 
-    socket.data["info"] = {
+    this.redisKey = `GM:${GAME_NAME}:PL:${socket.data.info.urId}`;
+
+    const playerData: IMatchData = {
       ...socket.data?.info,
       sid: socket.id,
-      rmid: crypto.randomUUID(),
-      bl: parseFloat(socket.data?.info?.bl),
-    } as IMatchData;
+      bl: Number(socket.data?.info?.bl),
+    };
+
     socket.data.matches = 0;
 
-    socket.join(socket.data?.info?.rmid);
-    socket.emit("200", socket.data.info);
-    socket.emit("info", { bl: socket.data.info.bl });
+    // Store in Redis using the defined key
+    await redisClient.setDataToRedis(this.redisKey, playerData);
+
+    socket.emit("200", playerData);
+    socket.emit("info", { bl: playerData.bl });
 
     socket.on("spin", this.onSpinReels.bind(this, socket));
   }
@@ -51,43 +54,44 @@ export class SlotMachine {
   async onSpinReels(socket: Socket, data: any) {
     console.log("-----------------spin start--------------");
 
-    if (!GS.GAME_SETTINGS) {
+    if (!GAME_SETTINGS) {
       socket.emit("400", "unable to load game settings");
       return;
     }
 
-    this.reels = SlotUtility.generateReels(15, 7);
-    socket.data.info.mthId = crypto.randomUUID();
+    if (!this.redisKey) this.redisKey = `GM:${GAME_NAME}:PL:${socket.data.info.urId}`;
+    let playerState: IMatchData = await redisClient.getDataFromRedis(this.redisKey);
+    if (!playerState) {
+      socket.emit("400", "session expired");
+      return;
+    }
+
+    this.reels = this.generateReels(15, 7);
+    playerState.mthId = crypto.randomUUID();
 
     if (!data.betAmt) {
       socket.emit("400", "bet amount not sent");
       return;
     }
-    data.betAmt = parseFloat(data.betAmt);
+    data.betAmt = Number(data.betAmt);
 
-    if (
-      data.betAmt > GS.GAME_SETTINGS?.max_bet ||
-      data.betAmt < GS.GAME_SETTINGS?.min_bet
-    ) {
+    if (data.betAmt > GAME_SETTINGS?.max_bet || data.betAmt < GAME_SETTINGS?.min_bet) {
       socket.emit("400", "invalid bet amount");
       return;
     }
 
-    if (Number(socket.data?.info?.bl) - Number(data.betAmt) < 0) {
+    if (Number(playerState.bl) - Number(data.betAmt) < 0) {
       socket.emit("400", "not enough balance to place this bet");
       return;
     }
 
-    let playerState: IMatchData = {
-      ...socket.data.info,
-      bl: socket.data?.info?.bl - data?.betAmt,
-      reels: this.reels,
-      betAmt: data.betAmt ?? 10,
-      winCombos: [],
-    };
+    playerState.bl -= data.betAmt;
+    playerState.reels = this.reels;
+    playerState.betAmt = data.betAmt ?? 10;
+    playerState.winCombos = [];
 
     const dbtTxnObj: IBetObject = {
-      id: playerState.mthId, // Unique bet or round ID
+      id: playerState.mthId,
       bet_amount: data.betAmt,
       game_id: socket.data.game_id,
       user_id: playerState.urId,
@@ -102,8 +106,7 @@ export class SlotMachine {
       token: socket.data.token,
     };
 
-    let dbtTxnRes = await updateBalanceFromAccount(dbtTxnObj,"DEBIT",playerDetailsForTxn);
-console.log("-------------",dbtTxnRes);
+    let dbtTxnRes: any = await updateBalanceFromAccount(dbtTxnObj, "DEBIT", playerDetailsForTxn);
     if (!dbtTxnRes) {
       socket.emit("400", "unable to process transaction");
       return;
@@ -111,60 +114,37 @@ console.log("-------------",dbtTxnRes);
 
     socket.emit("info", { bl: playerState.bl });
 
-    // must create a transaction insertion db call
-
     const matchedIndices = new Set<number>();
 
-    GS.winningCombinations5Match.forEach((idxArr: number[]) => {
-      const data = SlotUtility.checkForFive(this.reels, idxArr);
+    GAME_SETTINGS.winningCombinations5Match.forEach((idxArr: number[]) => {
+      const data = this.checkForFive(this.reels, idxArr);
       if (data?.cmbNm?.length) {
-        data.cmbPyt = SlotUtility.calculatePayout(data, playerState.betAmt);
-        playerState["winCombos"].push(data);
+        data.cmbPyt = this.calculatePayout(data, playerState.betAmt);
+        playerState.winCombos.push(data);
         idxArr.forEach((i) => matchedIndices.add(i));
       }
     });
 
-    GS.winningCombinations4Match.forEach((idxArr: number[]) => {
+    GAME_SETTINGS.winningCombinations4Match.forEach((idxArr: number[]) => {
       if (!idxArr.every((i) => matchedIndices.has(i))) {
-        const data = SlotUtility.checkForFour(this.reels, idxArr);
+        const data = this.checkForFour(this.reels, idxArr);
         if (data?.cmbNm?.length) {
-          data.cmbPyt = SlotUtility.calculatePayout(data, playerState.betAmt);
-          playerState["winCombos"].push(data);
+          data.cmbPyt = this.calculatePayout(data, playerState.betAmt);
+          playerState.winCombos.push(data);
           idxArr.forEach((i) => matchedIndices.add(i));
         }
       }
     });
 
-    GS.winningCombinations3Match.forEach((idxArr: number[]) => {
+    GAME_SETTINGS.winningCombinations3Match.forEach((idxArr: number[]) => {
       if (!idxArr.every((i) => matchedIndices.has(i))) {
-        const data = SlotUtility.checkForThree(this.reels, idxArr);
+        const data = this.checkForThree(this.reels, idxArr);
         if (data?.cmbNm?.length) {
-          data.cmbPyt = SlotUtility.calculatePayout(data, playerState.betAmt);
-          playerState["winCombos"].push(data);
+          data.cmbPyt = this.calculatePayout(data, playerState.betAmt);
+          playerState.winCombos.push(data);
         }
       }
     });
-
-    const specificCombo = [7, 3, 9];
-    let specificComboCount = 0;
-    playerState.winCombos.forEach((comb) =>
-      comb.cmbIdx.includes(7) &&
-      comb.cmbIdx.includes(3) &&
-      comb.cmbIdx.includes(9)
-        ? specificComboCount++
-        : specificComboCount
-    );
-
-    if (
-      !specificCombo.every((i) => matchedIndices.has(i)) &&
-      !specificComboCount
-    ) {
-      const data = SlotUtility.checkForThree(this.reels, specificCombo);
-      if (data?.cmbNm?.length) {
-        data.cmbPyt = SlotUtility.calculatePayout(data, playerState.betAmt);
-        playerState["winCombos"].push(data);
-      }
-    }
 
     playerState.win = playerState.winCombos.length > 0;
 
@@ -175,14 +155,11 @@ console.log("-------------",dbtTxnRes);
         0
       );
 
-      if (playerState.payout > GS.GAME_SETTINGS.max_payout)
-        playerState.payout = GS.GAME_SETTINGS.max_payout;
+      if (playerState.payout > GAME_SETTINGS.max_payout)
+        playerState.payout = GAME_SETTINGS.max_payout;
 
-      playerState.bl = playerState.bl + playerState.payout;
+      playerState.bl += playerState.payout;
     }
-
-    socket.data.info.bl = playerState.bl;
-    socket.data.matches++;
 
     let txnId = randomUUID();
     const betResultObj = {
@@ -200,8 +177,8 @@ console.log("-------------",dbtTxnRes);
       result: playerState.winCombos,
       operator_id: socket.data.info.operatorId,
     };
-    let id = await BetResult.create(betResultObj);
-    
+
+    await BetResult.create(betResultObj);
 
     let cdtObj: IBetObject = {
       id: playerState.mthId,
@@ -209,7 +186,6 @@ console.log("-------------",dbtTxnRes);
       game_id: socket.data.game_id,
       bet_amount: playerState.betAmt,
       winning_amount: playerState.payout,
-      // @ts-ignore
       txn_id: dbtTxnRes.txn_id,
       ip:
         // @ts-ignore
@@ -226,16 +202,155 @@ console.log("-------------",dbtTxnRes);
 
       if (!cdtTxn)
         return socket.emit("error", {
-          message: "unble to perform credit transaction, cashout unsuccessful",
+          message: "unable to perform credit transaction, cashout unsuccessful",
           playerState,
         });
     }
 
-    // save playerState before transforming the reels to 2d array
-    playerState.reels = SlotUtility.transformReels(playerState.reels);
+    playerState.reels = this.transformReels(playerState.reels);
+
+    // Update Redis with new player state
+    await redisClient.setDataToRedis(this.redisKey, playerState);
+
     socket.emit("200", playerState);
     setTimeout(() => {
       socket.emit("info", { bl: playerState.bl });
     }, 4000);
   }
+
+
+
+
+  checkForThree(
+    reels: number[],
+    [v0, v1, v2]: number[]
+  ): IWinCombos | null {
+    if (reels[v0] === reels[v1] && reels[v1] === reels[v2]) {
+      let object: IWinCombos = {
+        cmbIdx: [v0, v1, v2],
+        cmbNm: "Comb3",
+        cmbVal: [reels[v0], reels[v1], reels[v2]],
+      };
+
+      return object;
+    }
+    return null;
+  }
+
+  checkForFour(
+    reels: number[],
+    [v0, v1, v2, v3]: number[]
+  ): IWinCombos | null {
+    if (
+      reels[v0] === reels[v1] &&
+      reels[v1] === reels[v2] &&
+      reels[v2] === reels[v3]
+    ) {
+      return {
+        cmbIdx: [v0, v1, v2, v3],
+        cmbNm: "Comb4",
+        cmbVal: [reels[v0], reels[v1], reels[v2], reels[v3]],
+      };
+    }
+    return null;
+  }
+
+  checkForFive(
+    reels: number[],
+    [v0, v1, v2, v3, v4]: number[]
+  ): IWinCombos | null {
+    if (
+      reels[v0] === reels[v1] &&
+      reels[v1] === reels[v2] &&
+      reels[v2] === reels[v3] &&
+      reels[v3] === reels[v4]
+    ) {
+      let data: IWinCombos = {
+        cmbIdx: [v0, v1, v2, v3, v4],
+        cmbNm: "Comb5",
+        cmbVal: [reels[v0], reels[v1], reels[v2], reels[v3], reels[v4]],
+      };
+
+      return data;
+    }
+    return null;
+  }
+
+  // ------------------helpers----------------
+  calculatePayout(winCombo: IWinCombos, betAmt: number): number {
+    // @ts-ignore
+    const symbolName = GAME_SETTINGS.payNames[winCombo.cmbVal[0]];
+    // @ts-ignore
+    const payout = GAME_SETTINGS.payouts[symbolName];
+
+    if (!payout || symbolName) {
+      console.error(`Payout not found for symbol: ${symbolName}`);
+      return 0; // Return 0 if payout config is missing
+    }
+
+    switch (winCombo.cmbIdx.length) {
+      case 3:
+        winCombo.cmbPyt = betAmt * (payout.THREE || 0);
+        winCombo.cmbMtp = payout.THREE || 0;
+        break;
+      case 4:
+        winCombo.cmbPyt = betAmt * (payout.FOUR || 0);
+        winCombo.cmbMtp = payout.FOUR || 0;
+        break;
+      case 5:
+        winCombo.cmbPyt = betAmt * (payout.FIVE || 0);
+        winCombo.cmbMtp = payout.FIVE || 0;
+        break;
+      default:
+        console.warn(`Unexpected match length: ${winCombo.cmbIdx.length}`);
+        return 0;
+    }
+
+    winCombo.payline = this.getPayLineIndex(winCombo);
+    return winCombo.cmbPyt;
+  }
+
+
+  getPayLineIndex(winCombo: IWinCombos): number {
+    let arr = Object.entries(GAME_SETTINGS.payline_index);
+    for (let [index, payLine] of arr) {
+      let count = 0;
+
+      winCombo.cmbIdx.forEach((idx) => {
+        if (payLine.includes(idx)) count++;
+      });
+
+      switch (winCombo.cmbIdx.length) {
+        case 5:
+          if (count > 4) return Number(index);
+          break;
+        case 4:
+          if (count > 3) return Number(index);
+          break;
+        case 3:
+          if (count > 2) return Number(index);
+          break;
+      }
+    }
+
+    return -1;
+  }
+
+  generateReels(len: number, val: number): number[] {
+    return Array.from({ length: len }, () => Math.floor(Math.random() * val));
+  }
+
+  transformReels(reel: number[]): number[] {
+    let transformedReel: any = new Array(5);
+    let x = [reel.slice(0, 5), reel.slice(5, 10), reel.slice(10, 15)];
+    for (let i = 0; i < 5; i++) {
+      if ([1, 2, 3].includes(i)) transformedReel[i] = x[i - 1];
+      else if (i === 0 || i === 4) {
+        let e = this.generateReels(5, 7);
+        transformedReel[i] = e;
+      }
+    }
+    return transformedReel;
+  }
+
 }
