@@ -1,17 +1,21 @@
+import { config } from "dotenv";
+import { redisClient } from "../cache/redis";
+import { GAME_SETTINGS } from "../connection/gsConstants";
 import type { Info, IUserDetailResponse } from "../interfaces/userObj";
 import { Socket } from "socket.io";
-import dotenv from "dotenv";
 
-dotenv.config({
-  path: "./env",
-});
+config({ path: ".env" });
+const GAME_NAME = process.env.GAME_NAME || "Fruit-Burst";
 
 export const checkAuth = async (socket: Socket, next: Function) => {
   try {
     const token: string = socket.handshake.query?.token as string;
     const game_id: string = socket.handshake.query?.game_id as string;
+    const userIP = getUserIP(socket);
+
     console.log("token", token);
     console.log("game_id", game_id);
+    console.log("ip", userIP);
     if (!token) {
       return next(new Error("Authentication error: Invalid token"));
     }
@@ -26,13 +30,20 @@ export const checkAuth = async (socket: Socket, next: Function) => {
     const info: Info = {
       urId: newUser.user.user_id,
       urNm: newUser.user.name,
-      bl: newUser.user.balance,
-      crTs: Date.now(),
-      operatorId: newUser.user.operatorId,
+      bl: Number(newUser.user.balance),
+      operatorId: String(newUser.user.operatorId),
+      gmId: game_id,
+      sid: socket.id,
     };
+
+    const plStKey = `${GAME_NAME}:${info.operatorId}:${info.urId}:info`;
+    await redisClient.setDataToRedis(plStKey, info);
+
     socket.data.info = info;
     socket.data.token = token;
     socket.data.game_id = game_id;
+    socket.data.ip = userIP;
+
     next();
   } catch (error: any) {
     console.error("Authentication error:", error.message);
@@ -59,7 +70,6 @@ export const getUserDetail = async ({
       throw new Error(`HTTP error! status: ${resp.status}`);
     }
     const respJson = (await resp.json()) as IUserDetailResponse;
-
     if (respJson.status === false) {
       throw new Error("Invalid token or user not found");
     }
@@ -68,4 +78,13 @@ export const getUserDetail = async ({
     console.error("Error fetching user details:", error.message);
     throw error;
   }
+};
+
+export const getUserIP = (socket: any): string => {
+  const forwardedFor = socket.handshake.headers?.["x-forwarded-for"];
+  if (forwardedFor) {
+    const ip = forwardedFor.split(",")[0].trim();
+    if (ip) return ip;
+  }
+  return socket.handshake.address || "";
 };

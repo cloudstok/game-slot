@@ -9,10 +9,15 @@ export class BetResult {
   }
   static async fetchByUserId(
     id: string | number,
-    operator_id: string
+    operator_id: string,
+    limit: number = 25
   ): Promise<any> {
-    const query = `select * from bet_results where player_id = ? and operator_id = ?`;
-    let [res] = await pool.query(query, [id, operator_id]);
+    const query = `SELECT * FROM bet_results 
+      WHERE player_id = ? 
+      AND operator_id = ? 
+      ORDER BY created_at DESC
+      LIMIT ?;`;
+    let [res] = await pool.query(query, [id, operator_id, limit]);
     return res;
   }
   static async create({

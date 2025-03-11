@@ -97,4 +97,4 @@ function runRTPSimulation(spins: number, betAmount: number) {
 }
 
 // Run simulation with 1,000,000 spins and a bet amount of 10
-runRTPSimulation(100000, 10);
+runRTPSimulation(1000, 10);

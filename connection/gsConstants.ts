@@ -78,6 +78,9 @@ export const GAME_SETTINGS = {
     [10, 11, 12, 13],
     [11, 12, 13, 14],
     [0, 6, 8, 12],
+    [2, 6, 8, 10],
+    [2, 6, 8, 14],
+    [1, 7, 3, 9],
     [4, 6, 8, 12],
     [6, 7, 8, 9],
     [0, 1, 3, 7],
@@ -91,7 +94,6 @@ export const GAME_SETTINGS = {
   ],
   winningCombinations5Match: [
     [0, 1, 2, 3, 4],
-    [1, 7, 3, 9],
     [5, 6, 7, 8, 9],
     [10, 11, 12, 13, 14],
     [0, 4, 6, 8, 12],
@@ -132,7 +134,5 @@ export const GAME_SETTINGS = {
     "5": "CHERRY",
     "6": "ORANGE",
   },
-  created_at: "2025-01-25T04:27:26.000Z",
-  updated_at: "2025-02-04T05:07:29.000Z",
   max_payout: 1000000,
 };

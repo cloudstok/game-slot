@@ -12,16 +12,13 @@ export interface Info {
   urId: string;
   urNm: string;
   bl: number;
-  crTs: number;
-  operatorId: string
+  gmId: string;
+  sid: string;
+  operatorId: string;
 }
 
 export interface IMatchData {
-  urId: string;
-  sid: string;
-  rmId: string;
   mthId: string;
-  bl: number;
   betAmt: number;
   payout: number;
   reels: number[];
