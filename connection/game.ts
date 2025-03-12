@@ -45,7 +45,6 @@ export async function onSpinReels(socket: Socket, data: any) {
     winCombos: [],
     win: false
   }
-  playerInfo.bl -= data.betAmt;
 
   const dbtTxnObj: IBetObject = {
     id: matchData.mthId,
@@ -69,6 +68,9 @@ export async function onSpinReels(socket: Socket, data: any) {
     return;
   }
 
+  console.log("player info ---------------", playerInfo);
+  playerInfo.bl -= data.betAmt;
+  console.log("player info ---------------", playerInfo);
   socket.emit("info", { bl: playerInfo.bl });
 
   const matchedIndices = new Set<number>();
@@ -166,6 +168,7 @@ export async function onSpinReels(socket: Socket, data: any) {
 
   // ✅ Update Redis with final state
   await redisClient.setDataToRedis(matchKey, matchData);
+  await redisClient.setDataToRedis(plStKey, playerInfo)
 
   socket.emit("200", { ...matchData, ...playerInfo });
   setTimeout(() => {

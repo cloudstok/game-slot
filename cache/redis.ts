@@ -1,4 +1,6 @@
 import redis from "redis";
+import { config } from "dotenv"
+config({ path: ".env" });
 
 class RedisClient {
     private connection: any;
