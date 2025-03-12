@@ -166,9 +166,12 @@ export async function onSpinReels(socket: Socket, data: any) {
   await redisClient.setDataToRedis(plStKey, playerInfo);
 
   socket.emit("200", { ...matchData, ...playerInfo });
-  setTimeout(() => {
-    socket.emit("info", { bl: playerInfo.bl });
-  }, 4000);
+  if (matchData.win) {
+    setTimeout(() => {
+      socket.emit("info", { bl: playerInfo.bl });
+    }, 3300);
+  }
+
 }
 
 function checkForThree(
