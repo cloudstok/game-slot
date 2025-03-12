@@ -17,19 +17,14 @@ export async function onSpinReels(socket: Socket, data: any) {
   const matchKey = `${GAME_NAME}:${socket.data.info.operatorId}:${socket.data.info.urId}:match`;
 
   const playerInfo: Info = await redisClient.getDataFromRedis(plStKey);
-  if (!playerInfo)
-    return socket.emit("ERROR", "Player info not found in cache");
+  if (!playerInfo) return socket.emit("ERROR", "Player info not found in cache");
 
-  if (!GAME_SETTINGS) {
-    return socket.emit("400", "unable to load game settings");
-  }
+  if (!GAME_SETTINGS) return socket.emit("400", "unable to load game settings");
 
-  if (!data.betAmt) {
-    return socket.emit("400", "bet amount not sent");
-  }
+  if (!data.betAmt) return socket.emit("400", "bet amount not sent");
+
   data.betAmt = Number(data.betAmt);
-
-  if (data.betAmt > GAME_SETTINGS?.max_bet || data.betAmt < GAME_SETTINGS?.min_bet) {
+  if (data.betAmt > GAME_SETTINGS.max_bet || data.betAmt < GAME_SETTINGS.min_bet) {
     return socket.emit("400", "invalid bet amount");
   }
 
@@ -44,7 +39,7 @@ export async function onSpinReels(socket: Socket, data: any) {
     betAmt: data.betAmt,
     winCombos: [],
     win: false
-  }
+  };
 
   const dbtTxnObj: IBetObject = {
     id: matchData.mthId,
@@ -68,9 +63,7 @@ export async function onSpinReels(socket: Socket, data: any) {
     return;
   }
 
-  console.log("player info ---------------", playerInfo);
-  playerInfo.bl -= data.betAmt;
-  console.log("player info ---------------", playerInfo);
+  playerInfo.bl = playerInfo.bl - data.betAmt;
   socket.emit("info", { bl: playerInfo.bl });
 
   const matchedIndices = new Set<number>();
@@ -105,7 +98,7 @@ export async function onSpinReels(socket: Socket, data: any) {
     }
   });
 
-  matchData.winCombos = verifyCombinations(matchData.winCombos, matchData.reels)
+  matchData.winCombos = verifyCombinations(matchData.winCombos, matchData.reels);
 
   if (matchData.winCombos.length > 0) {
     matchData.win = true;
@@ -114,10 +107,9 @@ export async function onSpinReels(socket: Socket, data: any) {
       0
     );
 
-    if (matchData.payout > GAME_SETTINGS.max_payout)
+    if (matchData.payout > GAME_SETTINGS.max_payout) {
       matchData.payout = GAME_SETTINGS.max_payout;
-
-    playerInfo.bl += matchData.payout;
+    }
   } else {
     matchData.payout = 0; // Ensure payout remains 0 if there's no win
   }
@@ -155,20 +147,23 @@ export async function onSpinReels(socket: Socket, data: any) {
   };
 
   if (matchData.win) {
+    console.log("Before Credit txn: Player Balance =", playerInfo.bl);
+
     let cdtTxn: any = await updateBalanceFromAccount(cdtObj, "CREDIT", {
       game_id: socket.data.game_id,
       operatorId: socket.data.info.operatorId,
       token: socket.data.token,
     });
 
-    if (!cdtTxn) console.info('Credit txn failed');
+    if (!cdtTxn) console.info("Credit txn failed");
+    else playerInfo.bl += matchData.payout
   }
 
   matchData.reels = transformReels(matchData.reels);
 
-  // ✅ Update Redis with final state
+  // ✅ Update Redis with final state only once
   await redisClient.setDataToRedis(matchKey, matchData);
-  await redisClient.setDataToRedis(plStKey, playerInfo)
+  await redisClient.setDataToRedis(plStKey, playerInfo);
 
   socket.emit("200", { ...matchData, ...playerInfo });
   setTimeout(() => {
