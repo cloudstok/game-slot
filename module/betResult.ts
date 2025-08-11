@@ -66,6 +66,13 @@ export class BetResult {
       connection.release();
     }
   }
+  static async betDetails(user_id: string, operator_id: string, match_id: any): Promise<any> {
+    console.log({ user_id, operator_id, match_id });
+    const query = `select * from bet_results where player_id = ? and operator_id = ? and match_id = ?`;
+    let [res]: any = await pool.query(query, [user_id, operator_id, match_id]);
+    console.log(res);
+    return res[0];
+  }
   static async update(fields: any, id: number | string) {
     const query = `update table bet_results set ? where bet_result_id = ?`;
     let [res] = await pool.query(query, fields);
@@ -76,4 +83,5 @@ export class BetResult {
     let [res] = await pool.query(query, [id]);
     return res;
   }
+
 }

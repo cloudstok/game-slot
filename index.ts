@@ -2,15 +2,13 @@ import express, { type NextFunction } from "express";
 import { Server, Socket } from "socket.io";
 import { createServer } from "http";
 import { config } from "dotenv";
-import { checkAuth, getUserDetail } from "./middleware/socketAuth";
+import { checkAuth } from "./middleware/socketAuth";
 import { createTables } from "./db/index";
-import { BetResult } from "./module/betResult";
 import cors from "cors";
 import { redisClient } from "./cache/redis";
 import { GAME_SETTINGS } from "./connection/gsConstants";
-import type { IMatchData } from "./interfaces/userObj";
 import { onSpinReels } from "./connection/game";
-import { gameSettings } from "./db/tables";
+import { router } from "./routes/history";
 
 config({ path: ".env" });
 
@@ -70,31 +68,7 @@ new Server(httpServer, { cors: { origin: "*" } }).of(
   });
 
 
-app.get("/", (req: any, res: any) => {
-  return res.status(200).send({ statusCode: 200, message: "Fruit-Burst Backend is up and running" });
-});
-
-app.get("/bet-history", async (req: any, res: any) => {
-  try {
-    let { token, limit } = req.query;
-    if (!token) throw new Error("token not sent");
-    if (!limit) limit = 50
-    let userDetails = await getUserDetail({ token, socketId: null });
-    if (!userDetails.user.user_id) throw new Error("user not found");
-    let history = await BetResult.fetchByUserId(userDetails.user.user_id, userDetails.user.operatorId, Number(limit));
-    return res.status(200).send({
-      statusCode: 200,
-      history,
-      message: "bet history fetched successfully",
-    });
-  } catch (error: any) {
-    return res.status(500).send({
-      statusCode: 500,
-      error: error?.message,
-      message: "failed to fetch bet history",
-    });
-  }
-});
+app.use("/", router);
 
 httpServer.listen(process.env.PORT, () => {
   console.log("server running on port", process.env.PORT);
